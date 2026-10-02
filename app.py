@@ -940,9 +940,9 @@ def _filter_storage(df: pd.DataFrame, storage: str) -> pd.DataFrame:
     util_practice_desc ('ON FARM'/'OFF FARM' in the value for sub-rows).
     For TOTAL we keep only the aggregate row using both filters."""
     if storage != "TOTAL":
-        # ON FARM / OFF FARM explicit selection — split is in util_practice_desc
+        # ON FARM / OFF FARM — util_practice_desc values are like "ON FARM, GRAIN"
         if "util_practice_desc" in df.columns:
-            return df[df["util_practice_desc"].str.upper() == storage]
+            return df[df["util_practice_desc"].str.upper().str.contains(storage)]
         return df
 
     # TOTAL: keep ALL CLASSES rows that are NOT the on-farm or off-farm sub-rows
