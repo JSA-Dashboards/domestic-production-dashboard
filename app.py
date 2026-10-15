@@ -1035,6 +1035,19 @@ def load_stocks_national(commodity: str, quarter: str, y0: int, y1: int,
 
 # ── County / ASD helpers ─────────────────────────────────────────────────────
 
+def _county_params(mp: dict, year: int) -> dict:
+    """Build per-year county cache params matching jobs/domestic_production.py COUNTY_CROPS."""
+    base = {k: v for k, v in mp.items() if k != "reference_period_desc"}
+    return {
+        **base,
+        "source_desc": "SURVEY",
+        "domain_desc": "TOTAL",
+        "freq_desc": "ANNUAL",
+        "agg_level_desc": "COUNTY",
+        "year": str(year),
+    }
+
+
 @st.cache_data(ttl=1800, show_spinner=False)
 def load_county_data(commodity: str, metric_label: str, year: int) -> pd.DataFrame:
     """Return [State, County, fips, Value, asd_desc, asd_code] for one crop/metric/year.
@@ -1042,15 +1055,7 @@ def load_county_data(commodity: str, metric_label: str, year: int) -> pd.DataFra
     mp = COMMODITIES.get(commodity, {}).get(metric_label)
     if mp is None:
         return pd.DataFrame()
-    params = _broad_metric_params(mp, "COUNTY")
-    df = _fetch(params)
-    if df.empty:
-        return pd.DataFrame()
-    # Filter to requested year
-    yr_col = "year" if "year" in df.columns else None
-    if yr_col is None:
-        return pd.DataFrame()
-    df = df[pd.to_numeric(df[yr_col], errors="coerce") == year].copy()
+    df = _fetch(_county_params(mp, year))
     if df.empty:
         return pd.DataFrame()
     # Drop state/district aggregate rows
