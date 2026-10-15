@@ -1641,6 +1641,73 @@ with tab_nat:
             fig_yield.update_yaxes(tickformat=".1f", title=yield_label[0], title_font=dict(color=GRAY))
             st.plotly_chart(fig_yield, use_container_width=True)
 
+        # ── Total Supply (Sep 1 Stocks + Production) ─────────────────────────
+        if commodity in STOCKS_META and prod_label:
+            sep1_df = load_stocks_national(commodity, "SEP 1", year_range[0], year_range[1], "TOTAL")
+            prod_df = (
+                nat_df[nat_df["metric"] == prod_label[0]][["year", "value"]]
+                .rename(columns={"value": "production"})
+            )
+            if not sep1_df.empty and not prod_df.empty:
+                ts_df = sep1_df.rename(columns={"value": "stocks"}).merge(prod_df, on="year", how="inner")
+                ts_df["total_supply"] = ts_df["stocks"] + ts_df["production"]
+                ts_df = ts_df.sort_values("year")
+
+                st.markdown("<h3 class='jsa-section-hdr'>Total Supply</h3>", unsafe_allow_html=True)
+                st.markdown(
+                    "<p style='color:#6b7280;font-size:13px;margin-top:-8px;margin-bottom:12px'>"
+                    "Sep 1 Beginning Stocks + Production (same calendar year)</p>",
+                    unsafe_allow_html=True,
+                )
+
+                ts_latest = int(ts_df["year"].max())
+                ts_row = ts_df[ts_df["year"] == ts_latest]
+                if not ts_row.empty:
+                    ts_val   = float(ts_row["total_supply"].values[0])
+                    ts_prod  = float(ts_row["production"].values[0])
+                    ts_stk   = float(ts_row["stocks"].values[0])
+                    kpi_cols = st.columns([1, 1, 1, 3])
+                    for col, lbl, val in [
+                        (kpi_cols[0], "Total Supply",  ts_val),
+                        (kpi_cols[1], "Production",    ts_prod),
+                        (kpi_cols[2], "Sep 1 Stocks",  ts_stk),
+                    ]:
+                        yr_note = f"{ts_latest}{' — preliminary' if ts_latest == THIS_YEAR else ''}"
+                        col.markdown(
+                            f"<div class='kpi-card'>"
+                            f"<div class='kpi-label'>{lbl}</div>"
+                            f"<div class='kpi-value'>{_fmt(val, prod_label[0])}</div>"
+                            f"<div class='kpi-year'>{yr_note}</div>"
+                            f"</div>",
+                            unsafe_allow_html=True,
+                        )
+
+                fig_ts = go.Figure()
+                fig_ts.add_trace(go.Bar(
+                    x=ts_df["year"], y=ts_df["stocks"],
+                    name="Sep 1 Stocks",
+                    marker_color=TEAL, opacity=0.75,
+                    hovertemplate="<b>%{x}</b><br>Sep 1 Stocks: %{y:,.0f}<extra></extra>",
+                ))
+                fig_ts.add_trace(go.Bar(
+                    x=ts_df["year"], y=ts_df["production"],
+                    name="Production",
+                    marker_color=AMBER, opacity=0.85,
+                    hovertemplate="<b>%{x}</b><br>Production: %{y:,.0f}<extra></extra>",
+                ))
+                fig_ts.update_layout(
+                    barmode="stack",
+                    plot_bgcolor=CARD_BG, paper_bgcolor=CARD_BG,
+                    font=dict(color=TXT), height=420,
+                    margin=dict(l=65, r=20, t=30, b=40),
+                    legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color=TXT_SEC)),
+                    hoverlabel=dict(bgcolor=TXT, font_color=WHITE, bordercolor=TEAL),
+                    xaxis=dict(gridcolor=GRID_CLR, linecolor=BORDER, tickfont=dict(color=TXT_SEC)),
+                    yaxis=dict(tickformat=",.0f", gridcolor=GRID_CLR, linecolor=BORDER,
+                               tickfont=dict(color=TXT_SEC)),
+                )
+                st.plotly_chart(fig_ts, use_container_width=True)
+
 # ═════════════════════════════════════════════════════════════════════════════
 # TAB 2 — STATE LEVEL
 # ═════════════════════════════════════════════════════════════════════════════
