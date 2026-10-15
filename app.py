@@ -938,6 +938,8 @@ _HIST_METRIC_MAP: dict[str, dict[str, str]] = {
 
 @st.cache_data(ttl=300, show_spinner=False)
 def load_state_history(commodity: str, metric: str, y0: int, y1: int) -> pd.DataFrame:
+    if metric not in COMMODITIES.get(commodity, {}):
+        return pd.DataFrame()
     mp = COMMODITIES[commodity][metric]
     df = _fetch(_broad_metric_params(mp, "STATE"))
     if df.empty:
@@ -2441,13 +2443,14 @@ with tab_state:
                     tbl_shist = load_state_history(commodity, map_metric, tbl_y0, map_year)
 
                 if tbl_shist.empty or "state_abbr" not in tbl_shist.columns:
-                    c_msg, c_btn = st.columns([5, 1])
-                    c_msg.warning(
-                        "⏱ State comparison data unavailable — NASS API timed out."
-                    )
-                    if c_btn.button("🔄 Retry", key="retry_tbl"):
-                        st.cache_data.clear()
-                        st.rerun()
+                    if map_metric != "Total Supply":
+                        c_msg, c_btn = st.columns([5, 1])
+                        c_msg.warning(
+                            "⏱ State comparison data unavailable — NASS API timed out."
+                        )
+                        if c_btn.button("🔄 Retry", key="retry_tbl"):
+                            st.cache_data.clear()
+                            st.rerun()
                 else:
                     # National values — reuse the already-fetched nat_df (no extra API call)
                     nat_yr_vals = (
