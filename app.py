@@ -659,6 +659,8 @@ def _bar_label(v: float, metric: str, no_unit: bool = False) -> str:
         return f"{v:.0f}" if no_unit else f"{v:.0f} {unit}"
     if "Acres" in metric:
         return f"{v/1_000_000:.1f}" if no_unit else f"{v/1_000_000:.1f}M Ac"
+    if metric == "Total Supply":
+        return f"{v/1_000_000:.0f}" if no_unit else f"{v/1_000_000:.0f}M Bu"
     if "Production" in metric or "Stocks" in metric:
         unit = metric.split("(")[-1].replace(")", "").strip()
         if "Bu" in unit:
@@ -676,6 +678,8 @@ def _tbl_num(v, metric) -> str:
     Yield and Acres → 1 decimal; Production/Stocks → whole number."""
     if v is None or (isinstance(v, float) and pd.isna(v)):
         return "—"
+    if metric == "Total Supply":
+        return f"{round(v / 1_000_000):,}"
     if "Yield" in metric:
         return f"{v:.1f}"
     if "Acres" in metric:
@@ -696,6 +700,8 @@ def _nom_chg_str(chg, metric, no_unit=False) -> str:
         return f"{sign}{chg:.1f}" if no_unit else f"{sign}{chg:.1f} {unit}"
     if "Acres" in metric:
         return f"{sign}{chg / 1_000_000:.1f}" if no_unit else f"{sign}{chg / 1_000_000:.1f}M Ac"
+    if metric == "Total Supply":
+        return f"{sign}{chg / 1_000_000:.0f}" if no_unit else f"{sign}{chg / 1_000_000:.0f}M Bu"
     if "Production" in metric:
         unit = metric.split("(")[-1].replace(")", "").strip()
         if "Bales" in unit:
@@ -707,6 +713,8 @@ def _nom_chg_str(chg, metric, no_unit=False) -> str:
 
 def _tbl_unit(metric) -> str:
     """Human-readable unit label for table title parenthetical."""
+    if metric == "Total Supply":
+        return "Million Bushels"
     if "Yield" in metric:
         return metric.split("(")[-1].replace(")", "").strip()
     if "Acres" in metric:
@@ -995,6 +1003,30 @@ def load_stocks_snapshot(commodity: str, quarter: str, year: int,
     df = _filter_storage(df, storage)
     df = df.groupby(["state_name", "state_abbr"], as_index=False)["value"].sum()
     return df[["state_name", "state_abbr", "value"]].copy()
+
+@st.cache_data(ttl=300, show_spinner=False)
+def load_total_supply_snapshot(commodity: str, year: int) -> pd.DataFrame:
+    """Sep 1 state stocks + state production = Total Supply per state."""
+    if commodity not in STOCKS_META:
+        return pd.DataFrame()
+    prod_lbl = next((m for m in COMMODITIES.get(commodity, {}) if "Production" in m), None)
+    if prod_lbl is None:
+        return pd.DataFrame()
+    stocks = load_stocks_snapshot(commodity, "SEP 1", year, "TOTAL")
+    prod_snap = load_state_snapshot(commodity, year)
+    if stocks.empty or prod_snap.empty:
+        return pd.DataFrame()
+    prod_s = (
+        prod_snap[prod_snap["metric"] == prod_lbl][["state_abbr", "value"]]
+        .rename(columns={"value": "prod"})
+    )
+    merged = (
+        stocks[["state_name", "state_abbr", "value"]]
+        .rename(columns={"value": "stocks"})
+        .merge(prod_s, on="state_abbr", how="inner")
+    )
+    merged["value"] = merged["stocks"] + merged["prod"]
+    return merged[["state_name", "state_abbr", "value"]].copy()
 
 @st.cache_data(ttl=300, show_spinner=False)
 def load_stocks_history(commodity: str, quarter: str, y0: int, y1: int,
@@ -1927,25 +1959,39 @@ with tab_state:
             st.warning(f"No state data available for {commodity} in {map_year}.")
         else:
             # ── Metric pill filter ────────────────────────────────────────────────
-            prod_default = next((m for m in metric_list if "Production" in m), metric_list[0])
+            state_metrics = metric_list + (["Total Supply"] if commodity in STOCKS_META else [])
+            prod_default = next((m for m in state_metrics if "Production" in m), state_metrics[0])
             map_metric = st.radio(
                 "State metric",
-                metric_list,
-                index=metric_list.index(prod_default),
+                state_metrics,
+                index=state_metrics.index(prod_default),
                 horizontal=True,
                 label_visibility="collapsed",
             )
             st.markdown("<div style='margin-bottom:8px'></div>", unsafe_allow_html=True)
 
-            metric_snap = snap_df[snap_df["metric"] == map_metric].copy()
+            if map_metric == "Total Supply":
+                _ts = load_total_supply_snapshot(commodity, map_year)
+                metric_snap = (
+                    _ts.assign(metric="Total Supply")
+                    if not _ts.empty
+                    else pd.DataFrame(columns=["state_name", "state_abbr", "value", "metric"])
+                )
+            else:
+                metric_snap = snap_df[snap_df["metric"] == map_metric].copy()
 
             if metric_snap.empty:
                 st.warning(f"No state data for {map_metric} in {map_year}.")
             else:
                 # ── Map view toggle ───────────────────────────────────────────────
+                _map_view_opts = (
+                    ["Value", "vs Last Year"]
+                    if map_metric == "Total Supply"
+                    else ["Value", "vs Last Year", "vs Olympic Avg", "vs Year", "vs Prior Report"]
+                )
                 map_view = st.radio(
                     "Map view",
-                    ["Value", "vs Last Year", "vs Olympic Avg", "vs Year", "vs Prior Report"],
+                    _map_view_opts,
                     horizontal=True,
                     label_visibility="collapsed",
                     key="map_view",
@@ -1993,12 +2039,20 @@ with tab_state:
                 st.markdown("<div style='margin-bottom:4px'></div>", unsafe_allow_html=True)
 
                 # ── Always load LY for hover ──────────────────────────────────────
-                prior_snap = load_state_snapshot(commodity, map_year - 1)
-                prior_metric = (
-                    prior_snap[prior_snap["metric"] == map_metric][["state_abbr", "value"]]
-                    .rename(columns={"value": "prior_value"})
-                    if not prior_snap.empty else pd.DataFrame(columns=["state_abbr", "prior_value"])
-                )
+                if map_metric == "Total Supply":
+                    _prior_ts = load_total_supply_snapshot(commodity, map_year - 1)
+                    prior_metric = (
+                        _prior_ts[["state_abbr", "value"]].rename(columns={"value": "prior_value"})
+                        if not _prior_ts.empty
+                        else pd.DataFrame(columns=["state_abbr", "prior_value"])
+                    )
+                else:
+                    prior_snap = load_state_snapshot(commodity, map_year - 1)
+                    prior_metric = (
+                        prior_snap[prior_snap["metric"] == map_metric][["state_abbr", "value"]]
+                        .rename(columns={"value": "prior_value"})
+                        if not prior_snap.empty else pd.DataFrame(columns=["state_abbr", "prior_value"])
+                    )
                 metric_snap = metric_snap.merge(prior_metric, on="state_abbr", how="left")
                 metric_snap["chg_nom"] = metric_snap["value"] - metric_snap["prior_value"]
                 metric_snap["chg_pct"] = metric_snap["chg_nom"] / metric_snap["prior_value"] * 100
