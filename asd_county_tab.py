@@ -1459,6 +1459,12 @@ def _load_state_for_stat(crop: str, year: int, stat_type: str,
     """Wrapper that handles pct_harvested on top of load_nass_state."""
     if stat_type == "pct_harvested":
         return load_nass_state_pct_harvested(crop, year, cache_ver)
+    # For the forecast year, use the forecast loader which accepts any
+    # reference_period_desc (Oct Forecast, Sep Forecast, etc.) instead of
+    # _load_nass_state_raw which pins reference_period_desc=YEAR (Annual
+    # Summary, not published until January of the following year).
+    if year == FORECAST_YEAR:
+        return _load_nass_state_forecast(crop, stat_type, cache_ver)
     return load_nass_state(crop, year, stat_type, cache_ver)
 
 FORECAST_YEAR = 2026
@@ -1490,7 +1496,17 @@ def _load_nass_state_forecast_raw(crop: str, stat_type: str, cache_ver: str) -> 
     # The plain YEAR row is NASS's latest in-season estimate (it moves with each monthly Crop
     # Production report); the Jun/Mar Acreage rows are frozen snapshots. Preferring a snapshot
     # made harvested area stale, so ASD production didn't tie to the state total on the NASS tile.
-    _pref = {"YEAR": 0, "YEAR - JUN ACREAGE": 1, "YEAR - MAR ACREAGE": 2}
+    _pref = {
+        "YEAR": 0,
+        "YEAR - NOV FORECAST": 1,
+        "YEAR - OCT FORECAST": 2,
+        "YEAR - SEP FORECAST": 3,
+        "YEAR - AUG FORECAST": 4,
+        "YEAR - JUL FORECAST": 5,
+        "YEAR - JUN FORECAST": 6,
+        "YEAR - JUN ACREAGE": 7,
+        "YEAR - MAR ACREAGE": 8,
+    }
     if "reference_period_desc" in df.columns:
         df["_p"] = df["reference_period_desc"].map(lambda x: _pref.get(x, 99))
         df = df.sort_values("_p").drop_duplicates(subset=["State"], keep="first")
