@@ -1742,10 +1742,11 @@ with st.spinner("Fetching USDA NASS data..."):
     snap_df = load_state_snapshot(commodity, map_year)
 
 # ── Tabs ─────────────────────────────────────────────────────────────────────
-tab_nat, tab_state, tab_county, tab_stocks, tab_revisions, tab_wasde, tab_storage_cap, tab_storage_vs_prod = st.tabs([
+tab_nat, tab_state, tab_county, tab_asdc, tab_stocks, tab_revisions, tab_wasde, tab_storage_cap, tab_storage_vs_prod = st.tabs([
     "  📊  National Overview  ",
     "  🗺️  State Level  ",
     "  📍  County / ASD  ",
+    "  🧭  ASD & County Level  ",
     "  📦  Quarterly Stocks  ",
     "  🔄  Revision Tracker  ",
     "  🌾  WASDE  ",
@@ -3016,6 +3017,21 @@ with tab_county:
                         lambda v: f"{v:,.1f}" if is_yield_c else f"{v:,.0f}"
                     )
                     st.dataframe(tbl_c, use_container_width=True, hide_index=True)
+
+# ═════════════════════════════════════════════════════════════════════════════
+# TAB 3b — ASD & COUNTY LEVEL
+# The NASS Production tab of the RMA dashboard (state → ASD → county, county production tied to the state total, wheat by class), generated into asd_county_tab.py
+# by sync_nass_mirror.py --module in JSA-Dashboards/rma-production-map: change it there and regenerate, do not edit asd_county_tab.py here.
+# It reads NASS QuickStats directly, so the app needs the NASS_API_KEY secret.
+# ═════════════════════════════════════════════════════════════════════════════
+with tab_asdc:
+    if tab_asdc.open:
+        try:
+            import asd_county_tab
+        except ImportError as _e:
+            st.error(f"The ASD & County Level tab needs a package this app does not have yet ({_e}). Add geopandas and shapely to requirements.txt.")
+        else:
+            asd_county_tab.render()
 
 # ═════════════════════════════════════════════════════════════════════════════
 # TAB 4 — QUARTERLY STOCKS
