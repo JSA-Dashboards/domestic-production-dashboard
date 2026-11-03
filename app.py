@@ -2916,6 +2916,7 @@ with tab_county:
             county_year = st.selectbox(
                 "Year",
                 list(range(THIS_YEAR, 2014, -1)),
+                index=1,                    # NASS publishes county estimates in February of the following year, so this year has none yet
                 key="county_year",
             )
         with ctrl_c:
@@ -2929,12 +2930,22 @@ with tab_county:
         # ── Load ─────────────────────────────────────────────────────────────
         with st.spinner("Loading county data from NASS cache..."):
             c_raw = load_county_data(commodity, county_metric, county_year)
+            c_asked = county_year
+            if c_raw.empty:                  # a year NASS has not published county data for: show the latest year it has (cache reads, so cheap)
+                for _y in range(county_year - 1, max(county_year - 4, 2014), -1):
+                    c_raw = load_county_data(commodity, county_metric, _y)
+                    if not c_raw.empty:
+                        county_year = _y
+                        break
+
+        if not c_raw.empty and county_year != c_asked:
+            st.info(f"NASS has not published {c_asked} county estimates for {commodity} yet (they come out in February for the previous crop year). "
+                    f"Showing {county_year}, the latest year in the cache.", icon="ℹ️")
 
         if c_raw.empty:
             st.info(
-                f"County-level data for **{commodity} — {county_metric}** is not yet "
-                "in the NASS cache. The ETL job will be updated to include county-level "
-                "queries. Check back after the next scheduled cache run.",
+                f"No county-level data for **{commodity} — {county_metric}** in {c_asked} or the three years before it is in the NASS cache. "
+                "County estimates are published in February for the previous crop year, and the cache refreshes daily.",
                 icon="ℹ️",
             )
         else:
