@@ -13,6 +13,7 @@ Differences from the RMA tab:
   * CRP comes from data/acreage_crp.json (USDA FSA CRPHistoryState86-25), million acres by state and year.
 """
 import json
+import re
 from datetime import date
 from pathlib import Path
 
@@ -22,6 +23,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 import usda_baseline as ub
+import dp_snapshot_buttons as _snap
 from nass_cache_client import _cache_key, _sf_connect, _use_sf, fetch_cached
 
 HERE = Path(__file__).parent
@@ -380,6 +382,10 @@ def _rma_prevent_plant() -> pd.DataFrame:
 
 
 # ── tab ───────────────────────────────────────────────────────────────────────
+def _slug(text: str) -> str:
+    return re.sub(r"[^A-Za-z0-9]+", "_", str(text)).strip("_") or "national"
+
+
 def render():
     ac1, ac2, ac3 = st.columns([1.5, 2, 2])
     with ac1:
@@ -475,8 +481,10 @@ def render():
     else:
         tbl_mul, tbl_unit = 1_000_000.0, "ac"
 
-    st.markdown(_render_acreage_html(acr_rows, cal_yrs, tbl_title, scope_lbl, unit_mul=tbl_mul, unit_lbl=tbl_unit),
-                unsafe_allow_html=True)
+    table_html = _render_acreage_html(acr_rows, cal_yrs, tbl_title, scope_lbl, unit_mul=tbl_mul, unit_lbl=tbl_unit)
+    st.markdown(table_html, unsafe_allow_html=True)
+    # the table prints its own title (US Major Field Crops Area Planted, the scope, the years), so the snapshot has it
+    _snap.card_buttons(table_html, "", 1500, f"Acreage_Summary_{_slug(scope_lbl)}", key="acr_table")
     st.markdown(
         f"<p style='font-size:0.72rem;color:{MUTED};margin-top:8px;'>"
         "Planted acres: USDA NASS QuickStats (shared cache). "
@@ -498,6 +506,7 @@ def render():
         )
         bl_html = _render_baseline_html()
         st.markdown(bl_html, unsafe_allow_html=True)
+        _snap.card_buttons(bl_html, "", 1500, "USDA_Baseline_Acreage_2025_2036", key="acr_baseline_table")
         st.markdown(
             f"<p style='font-size:0.72rem;color:{MUTED};margin-top:8px;'>Source: {ub.SOURCE} "
             "The baseline's cotton is upland cotton only and its total is the eight crops shown (it has no sunflower, canola or hay), "
@@ -545,13 +554,15 @@ def render():
                     hovertemplate=f"<b>{lbl}, USDA baseline projection</b><br>%{{x}}: %{{y:.2f}}M ac<extra></extra>",
                 ))
         fig.update_layout(
+            title=dict(text=f"Planted Acres Trend: {scope_lbl}", font=dict(size=14, color=TEXT)),
             yaxis_title="Million Acres", xaxis_title="Marketing Year", hovermode="x unified",
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=11), bgcolor="rgba(0,0,0,0)"),
-            height=440, margin=dict(l=60, r=20, t=56, b=80), plot_bgcolor=PANEL, paper_bgcolor="rgba(0,0,0,0)",
+            height=440, margin=dict(l=60, r=20, t=80, b=80), plot_bgcolor=PANEL, paper_bgcolor="rgba(0,0,0,0)",
             font=dict(color=TEXT, family="sans-serif", size=12),
             xaxis=dict(tickangle=-45, showgrid=False, linecolor=BORDER, tickfont=dict(size=10), zeroline=False),
             yaxis=dict(gridcolor=BORDER, gridwidth=1, zeroline=False, tickfont=dict(size=10)),
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, key="acr_trend")
+        _snap.chart_buttons("acr_trend", f"Planted_Acres_Trend_{_slug(scope_lbl)}", key="acr_trend")
         if show_bl and any(chart_cols[c] in ub.CHART_MATCH for c in sel):
             st.caption("Dashed lines are the USDA baseline projections (national, from the last year of history on). Series without a matching baseline definition are not projected.")
